@@ -2,6 +2,7 @@ import javax.swing.*;
 import javax.swing.Timer;
 import java.awt.*;
 import java.awt.event.*;
+import java.awt.image.BufferedImage;
 import java.util.*;
 
 public class FluidSimulation {
@@ -15,7 +16,9 @@ public class FluidSimulation {
     private final double BOUNCE = 0.7;
     private final double PRESSURE = 0.05;
     private final double VISCOSITY = 0.02;
-    private final Rectangle BOUNDING_BOX = new Rectangle(50, 50, 700, 500);
+
+    private final Rectangle BOUNDING_BOX = new Rectangle(5, 5, 700 - 2 * (int)Particle.RADIUS, 500 - 2 * (int)Particle.RADIUS);
+
     private Point mousePoint;
     private boolean isLeftClick = false;
     private boolean isRightClick = false;
@@ -25,10 +28,9 @@ public class FluidSimulation {
     private double fps;
 
     private final int CELL_SIZE = 20;
+    private static final double DENSITY_THRESHOLD = 0.5;
+
     private final Map<Point, LinkedList<Particle>> grid = new HashMap<>();
-
-
-
 
     public FluidSimulation() {
         JFrame frame = new JFrame("2D Fluid Simulation");
@@ -78,7 +80,7 @@ public class FluidSimulation {
         String[] modes = {"Pressure", "Velocity", "Speed"};
         visualizationMode = new JComboBox<>(modes);
         visualizationMode.addActionListener(e -> drawingPanel.setMode(Objects.requireNonNull(visualizationMode.getSelectedItem()).toString()));
-        frame.add(visualizationMode, BorderLayout.NORTH);
+        //frame.add(visualizationMode, BorderLayout.NORTH);
 
         Timer timer = new Timer(0, e -> {
             applyPressureAndViscosity();
@@ -190,6 +192,89 @@ public class FluidSimulation {
         }
     }
 
+    private double calculateDensity(int x, int y) {
+        double density = 0;
+        for (Particle p : particles) {
+            double dx = x - p.x;
+            double dy = y - p.y;
+            double distanceSquared = dx * dx + dy * dy;
+            density += Particle.RADIUS * Particle.RADIUS / (distanceSquared + 1);
+        }
+        return density;
+    }
+
+    private ArrayList<Polygon> marchingSquares() {
+        ArrayList<Polygon> polygons = new ArrayList<>();
+        int stepSize = 5; // Adjust for resolution vs performance
+
+        for (int x = 0; x < BOUNDING_BOX.width; x += stepSize) {
+            for (int y = 0; y < BOUNDING_BOX.height; y += stepSize) {
+                // Calculate densities at the corners of the square
+                double[] densities = {
+                        calculateDensity(x, y),
+                        calculateDensity(x + stepSize, y),
+                        calculateDensity(x + stepSize, y + stepSize),
+                        calculateDensity(x, y + stepSize)
+                };
+
+                // Generate contour for this square
+                Polygon contour = generateContour(x, y, stepSize, densities);
+                if (contour != null) {
+                    polygons.add(contour);
+                }
+            }
+        }
+
+        return polygons;
+    }
+
+    private Polygon generateContour(int x, int y, int stepSize, double[] densities) {
+        int caseIndex = 0;
+        if (densities[0] > DENSITY_THRESHOLD) caseIndex |= 1;
+        if (densities[1] > DENSITY_THRESHOLD) caseIndex |= 2;
+        if (densities[2] > DENSITY_THRESHOLD) caseIndex |= 4;
+        if (densities[3] > DENSITY_THRESHOLD) caseIndex |= 8;
+
+        // Based on the caseIndex, determine the contour edges
+        switch (caseIndex) {
+            case 0:
+            case 15:
+                // No contour
+                return null;
+            case 1:
+            case 14:
+                return createPolygon(new int[]{x, x, x + stepSize / 2}, new int[]{y + stepSize / 2, y, y});
+            case 2:
+            case 13:
+                return createPolygon(new int[]{x + stepSize / 2, x + stepSize, x + stepSize}, new int[]{y, y, y + stepSize / 2});
+            case 3:
+            case 12:
+                return createPolygon(new int[]{x, x, x + stepSize}, new int[]{y + stepSize / 2, y, y + stepSize / 2});
+            case 4:
+            case 11:
+                return createPolygon(new int[]{x + stepSize, x + stepSize, x + stepSize / 2}, new int[]{y + stepSize / 2, y + stepSize, y + stepSize});
+            case 5:
+                return createPolygon(new int[]{x, x, x + stepSize / 2, x + stepSize, x + stepSize, x + stepSize / 2},
+                        new int[]{y + stepSize / 2, y, y, y, y + stepSize / 2, y + stepSize});
+            case 6:
+            case 9:
+                return createPolygon(new int[]{x + stepSize / 2, x + stepSize, x, x + stepSize / 2},
+                        new int[]{y, y, y + stepSize, y + stepSize});
+            case 7:
+            case 8:
+                return createPolygon(new int[]{x, x, x + stepSize}, new int[]{y + stepSize / 2, y + stepSize, y + stepSize});
+            case 10:
+                return createPolygon(new int[]{x, x + stepSize / 2, x + stepSize, x + stepSize, x + stepSize / 2, x},
+                        new int[]{y, y, y, y + stepSize, y + stepSize, y + stepSize / 2});
+        }
+        return null;
+    }
+
+    private Polygon createPolygon(int[] xPoints, int[] yPoints) {
+        return new Polygon(xPoints, yPoints, xPoints.length);
+    }
+
+
     class DrawingPanel extends JPanel {
         private String mode = "Pressure";
 
@@ -201,11 +286,16 @@ public class FluidSimulation {
         @Override
         protected void paintComponent(Graphics g) {
             super.paintComponent(g);
-            g.setColor(Color.GRAY);
-            g.drawRect(BOUNDING_BOX.x, BOUNDING_BOX.y, BOUNDING_BOX.width, BOUNDING_BOX.height);
-            for (Particle p : particles) {
-                p.draw(g, mode);
+
+            ArrayList<Polygon> fluidContours = marchingSquares();
+            for (Polygon contour : fluidContours) {
+                g.fillPolygon(contour);
             }
+            //g.setColor(Color.GRAY);
+            //g.drawRect(BOUNDING_BOX.x, BOUNDING_BOX.y, BOUNDING_BOX.width, BOUNDING_BOX.height);
+            //for (Particle p : particles) {
+            //    p.draw(g, mode);
+            //}
 
             // Draw FPS and particle count
             g.setColor(Color.BLACK);

@@ -24,23 +24,25 @@ class Particle {
         x += vx;
         y += vy;
 
-        if (x < boundingBox.x) {
-            x = boundingBox.x;
+        // Ensure particles remain within the visible frame
+        if (x < boundingBox.x + RADIUS) {
+            x = boundingBox.x + RADIUS;
             vx = Math.abs(vx) * bounce;
         }
-        if (x > boundingBox.x + boundingBox.width) {
-            x = boundingBox.x + boundingBox.width;
+        if (x > boundingBox.x + boundingBox.width - RADIUS) {
+            x = boundingBox.x + boundingBox.width - RADIUS;
             vx = -Math.abs(vx) * bounce;
         }
-        if (y < boundingBox.y) {
-            y = boundingBox.y;
+        if (y < boundingBox.y + RADIUS) {
+            y = boundingBox.y + RADIUS;
             vy = Math.abs(vy) * bounce;
         }
-        if (y > boundingBox.y + boundingBox.height) {
-            y = boundingBox.y + boundingBox.height;
+        if (y > boundingBox.y + boundingBox.height - RADIUS) {
+            y = boundingBox.y + boundingBox.height - RADIUS;
             vy = -Math.abs(vy) * bounce;
         }
     }
+
 
     public void draw(Graphics g, String mode) {
         double value = 0;
