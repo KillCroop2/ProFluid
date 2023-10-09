@@ -6,30 +6,35 @@ import java.util.*;
 
 public class FluidSimulation {
 
-    private final DrawingPanel drawingPanel;
-    private final JComboBox<String> visualizationMode;
-    private final ArrayList<Particle> particles;
+    // Constants
     private final int MAX_PARTICLES = 10000;
     private final double GRAVITY = 0.2;
     private final double DRAG = 0.98;
     private final double BOUNCE = 0.7;
     private final double PRESSURE = 0.05;
     private final double VISCOSITY = 0.02;
-
     private final Rectangle BOUNDING_BOX = new Rectangle(5, 5, 700 - 2 * (int)Particle.RADIUS, 500 - 2 * (int)Particle.RADIUS);
+    private final int CELL_SIZE = 20;
+    private static final double DENSITY_THRESHOLD = 0.5;
+
+    // Variables
+    private DrawingPanel drawingPanel;
+    private JComboBox<String> visualizationMode;
+    private ArrayList<Particle> particles;
+    private final Map<Point, LinkedList<Particle>> grid = new HashMap<>();
     private Point mousePoint;
     private boolean isLeftClick = false;
     private boolean isRightClick = false;
-
     private long lastTime;
     private int frames;
     private double fps;
 
-    private final int CELL_SIZE = 20;
-    private static final double DENSITY_THRESHOLD = 0.5;
-    private final Map<Point, LinkedList<Particle>> grid = new HashMap<>();
-
     public FluidSimulation() {
+        setupUI();
+        setupTimer();
+    }
+
+    private void setupUI() {
         JFrame frame = new JFrame("2D Fluid Simulation");
         frame.setSize(BOUNDING_BOX.width + 100, BOUNDING_BOX.height + 150);
         frame.setResizable(false);
@@ -42,24 +47,27 @@ public class FluidSimulation {
         fps = 0;
 
         drawingPanel = new DrawingPanel();
+        setupMouseListeners();
+        frame.add(drawingPanel, BorderLayout.CENTER);
+
+        String[] modes = {"Pressure", "Velocity", "Acceleration"};
+        visualizationMode = new JComboBox<>(modes);
+        visualizationMode.addActionListener(e -> drawingPanel.setMode(Objects.requireNonNull(visualizationMode.getSelectedItem()).toString()));
+        frame.add(visualizationMode, BorderLayout.NORTH);
+
+        frame.setVisible(true);
+    }
+
+    private void setupMouseListeners() {
         drawingPanel.addMouseListener(new MouseAdapter() {
             @Override
             public void mousePressed(MouseEvent e) {
-                mousePoint = e.getPoint();
-                if (SwingUtilities.isLeftMouseButton(e)) {
-                    isLeftClick = true;
-                } else if (SwingUtilities.isRightMouseButton(e)) {
-                    isRightClick = true;
-                }
+                handleMousePressed(e);
             }
 
             @Override
             public void mouseReleased(MouseEvent e) {
-                if (SwingUtilities.isLeftMouseButton(e)) {
-                    isLeftClick = false;
-                } else if (SwingUtilities.isRightMouseButton(e)) {
-                    isRightClick = false;
-                }
+                handleMouseReleased(e);
             }
         });
         drawingPanel.addMouseMotionListener(new MouseMotionAdapter() {
@@ -68,30 +76,84 @@ public class FluidSimulation {
                 mousePoint = e.getPoint();
             }
         });
+    }
 
-        frame.add(drawingPanel, BorderLayout.CENTER);
+    private void handleMousePressed(MouseEvent e) {
+        mousePoint = e.getPoint();
+        if (SwingUtilities.isLeftMouseButton(e)) {
+            isLeftClick = true;
+        } else if (SwingUtilities.isRightMouseButton(e)) {
+            isRightClick = true;
+        }
+    }
 
-        String[] modes = {"Pressure", "Velocity", "Acceleration"};
-        visualizationMode = new JComboBox<>(modes);
-        visualizationMode.addActionListener(e -> drawingPanel.setMode(Objects.requireNonNull(visualizationMode.getSelectedItem()).toString()));
-        frame.add(visualizationMode, BorderLayout.NORTH);
+    private void handleMouseReleased(MouseEvent e) {
+        if (SwingUtilities.isLeftMouseButton(e)) {
+            isLeftClick = false;
+        } else if (SwingUtilities.isRightMouseButton(e)) {
+            isRightClick = false;
+        }
+    }
 
+    private void setupTimer() {
         Timer timer = new Timer(0, e -> {
             applyPressureAndViscosity();
             handleUserInteraction();
             updateParticles();
             drawingPanel.repaint();
-            frames++;
-            long currentTime = System.currentTimeMillis();
-            if (currentTime - lastTime >= 1000) {
-                fps = frames;
-                frames = 0;
-                lastTime = currentTime;
-            }
+            updateFPS();
         });
         timer.start();
+    }
 
-        frame.setVisible(true);
+    private void updateFPS() {
+        frames++;
+        long currentTime = System.currentTimeMillis();
+        if (currentTime - lastTime >= 1000) {
+            fps = frames;
+            frames = 0;
+            lastTime = currentTime;
+        }
+    }
+
+    private void applyGravityToParticle(Particle p, double gravity) {
+        p.vy += gravity;
+    }
+
+    private void applyDragToParticle(Particle p, double dragCoefficient) {
+        p.vx *= dragCoefficient;
+        p.vy *= dragCoefficient;
+    }
+
+    private void updateParticle(Particle p, Rectangle boundingBox, double bounce) {
+        p.x += p.vx;
+        p.y += p.vy;
+
+        // Ensure particles remain within the visible frame
+        if (p.x < boundingBox.x + Particle.RADIUS) {
+            p.x = boundingBox.x + Particle.RADIUS;
+            p.vx = Math.abs(p.vx) * bounce;
+        }
+        if (p.x > boundingBox.x + boundingBox.width - Particle.RADIUS) {
+            p.x = boundingBox.x + boundingBox.width - Particle.RADIUS;
+            p.vx = -Math.abs(p.vx) * bounce;
+        }
+        if (p.y < boundingBox.y + Particle.RADIUS) {
+            p.y = boundingBox.y + Particle.RADIUS;
+            p.vy = Math.abs(p.vy) * bounce;
+        }
+        if (p.y > boundingBox.y + boundingBox.height - Particle.RADIUS) {
+            p.y = boundingBox.y + boundingBox.height - Particle.RADIUS;
+            p.vy = -Math.abs(p.vy) * bounce;
+        }
+    }
+
+    private void updateParticles() {
+        for (Particle p : particles) {
+            applyGravityToParticle(p, GRAVITY);
+            applyDragToParticle(p, DRAG);
+            updateParticle(p, BOUNDING_BOX, BOUNCE);
+        }
     }
 
     private void buildGrid() {
@@ -161,14 +223,6 @@ public class FluidSimulation {
                     }
                 }
             }
-        }
-    }
-
-    private void updateParticles() {
-        for (Particle p : particles) {
-            p.applyGravity(GRAVITY);
-            p.applyDrag(DRAG);
-            p.update(BOUNDING_BOX, BOUNCE);
         }
     }
 
