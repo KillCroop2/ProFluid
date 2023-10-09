@@ -1,8 +1,8 @@
 import java.awt.*;
 
 class Particle {
-    double x, y, vx, vy;
-    static final double RADIUS = 2.5;
+    double x, y, vx, vy, ax, ay, pressure;
+    static double RADIUS = 5.5;
 
     public Particle(double x, double y, double vx, double vy) {
         this.x = x;
@@ -10,6 +10,20 @@ class Particle {
         this.vx = vx;
         this.vy = vy;
     }
+
+    public static void setRadius(double newRadius) {
+        RADIUS = newRadius;
+    }
+
+    public double getSpeed() {
+        return Math.sqrt(vx * vx + vy * vy);
+    }
+
+    public double getAcceleration() {
+        return Math.sqrt(ax * ax + ay * ay);
+    }
+
+
 
     public void applyGravity(double gravity) {
         vy += gravity;
@@ -43,19 +57,20 @@ class Particle {
         }
     }
 
-
     public void draw(Graphics g, String mode) {
         double value = 0;
         switch (mode) {
             case "Pressure":
-                value = Math.sqrt(vx * vx + vy * vy);
+                // Calculate pressure value for the particle (this needs further implementation)
+                value = 0;
                 break;
             case "Velocity":
                 value = Math.sqrt(vx * vx + vy * vy);
                 value = Math.min(1, Math.max(0, value / 10));
                 break;
-            case "Speed":
-                value = Math.sqrt(vx * vx + vy * vy) / 10;
+            case "Acceleration":
+                // Calculate acceleration value for the particle (this needs further implementation)
+                value = 0;
                 break;
         }
         value = Math.min(1, Math.max(0, value));
@@ -63,9 +78,13 @@ class Particle {
         g.fillOval((int) (x - RADIUS), (int) (y - RADIUS), (int) (2 * RADIUS), (int) (2 * RADIUS));
     }
 
+
+
     private Color getInterpolatedColor(double value) {
         int blue = (int) (255 * (1 - value));
         int red = (int) (255 * value);
         return new Color(red, 0, blue);
     }
+
+
 }
