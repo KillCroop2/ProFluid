@@ -3,9 +3,10 @@ import javax.swing.Timer;
 import java.awt.*;
 import java.awt.event.*;
 import java.util.*;
+import java.util.List;
+import java.util.stream.IntStream;
 
 public class FluidSimulation {
-
     // Constants
     private final int MAX_PARTICLES = 10000;
     private final double GRAVITY = 0.2;
@@ -15,7 +16,7 @@ public class FluidSimulation {
     private final double VISCOSITY = 0.02;
     private final Rectangle BOUNDING_BOX = new Rectangle(5, 5, 700 - 2 * (int)Particle.RADIUS, 500 - 2 * (int)Particle.RADIUS);
     private final int CELL_SIZE = 20;
-    private static final double DENSITY_THRESHOLD = 0.5;
+    private static final double DENSITY_THRESHOLD = 3;
 
     // Variables
     private DrawingPanel drawingPanel;
@@ -79,11 +80,15 @@ public class FluidSimulation {
     }
 
     private void handleMousePressed(MouseEvent e) {
-        mousePoint = e.getPoint();
-        if (SwingUtilities.isLeftMouseButton(e)) {
-            isLeftClick = true;
-        } else if (SwingUtilities.isRightMouseButton(e)) {
-            isRightClick = true;
+        if (mousePoint != null) {
+            if (!mousePoint.equals(e.getPoint())) {
+                mousePoint = e.getPoint();
+                if (SwingUtilities.isLeftMouseButton(e)) {
+                    isLeftClick = true;
+                } else if (SwingUtilities.isRightMouseButton(e)) {
+                    isRightClick = true;
+                }
+            }
         }
     }
 
@@ -130,30 +135,23 @@ public class FluidSimulation {
         p.y += p.vy;
 
         // Ensure particles remain within the visible frame
-        if (p.x < boundingBox.x + Particle.RADIUS) {
-            p.x = boundingBox.x + Particle.RADIUS;
-            p.vx = Math.abs(p.vx) * bounce;
+        p.x = Math.min(Math.max(p.x, boundingBox.x + Particle.RADIUS), boundingBox.x + boundingBox.width - Particle.RADIUS);
+        p.y = Math.min(Math.max(p.y, boundingBox.y + Particle.RADIUS), boundingBox.y + boundingBox.height - Particle.RADIUS);
+
+        if (p.x == boundingBox.x + Particle.RADIUS || p.x == boundingBox.x + boundingBox.width - Particle.RADIUS) {
+            p.vx = -p.vx * bounce;
         }
-        if (p.x > boundingBox.x + boundingBox.width - Particle.RADIUS) {
-            p.x = boundingBox.x + boundingBox.width - Particle.RADIUS;
-            p.vx = -Math.abs(p.vx) * bounce;
-        }
-        if (p.y < boundingBox.y + Particle.RADIUS) {
-            p.y = boundingBox.y + Particle.RADIUS;
-            p.vy = Math.abs(p.vy) * bounce;
-        }
-        if (p.y > boundingBox.y + boundingBox.height - Particle.RADIUS) {
-            p.y = boundingBox.y + boundingBox.height - Particle.RADIUS;
-            p.vy = -Math.abs(p.vy) * bounce;
+        if (p.y == boundingBox.y + Particle.RADIUS || p.y == boundingBox.y + boundingBox.height - Particle.RADIUS) {
+            p.vy = -p.vy * bounce;
         }
     }
 
     private void updateParticles() {
-        for (Particle p : particles) {
+        particles.parallelStream().forEach(p -> {
             applyGravityToParticle(p, GRAVITY);
             applyDragToParticle(p, DRAG);
             updateParticle(p, BOUNDING_BOX, BOUNCE);
-        }
+        });
     }
 
     private void buildGrid() {
@@ -196,9 +194,20 @@ public class FluidSimulation {
         }
     }
 
+    private double calculateDensity(int x, int y) {
+        double density = 0;
+        for (Particle p : particles) {
+            double dx = x - p.x;
+            double dy = y - p.y;
+            double distanceSquared = dx * dx + dy * dy;
+            density += Particle.RADIUS * Particle.RADIUS / (distanceSquared + 1);
+        }
+        return density;
+    }
+
     private void applyPressureAndViscosity() {
         buildGrid();
-        for (Particle a : particles) {
+        particles.parallelStream().forEach(a -> {
             LinkedList<Particle> neighbors = getNeighbors(a);
             for (Particle b : neighbors) {
                 if (a != b) {
@@ -206,9 +215,9 @@ public class FluidSimulation {
                     double dy = b.y - a.y;
                     double dist = Math.sqrt(dx * dx + dy * dy);
 
-                    if (dist < 5) { // Only check interactions for particles within a certain distance
+                    if (dist < 2 * Particle.RADIUS) { // Only check interactions for particles within a certain distance
                         double angle = Math.atan2(dy, dx);
-                        double force = (5 - dist) * PRESSURE;
+                        double force = (2 * Particle.RADIUS - dist) * PRESSURE;
                         a.vx -= force * Math.cos(angle);
                         a.vy -= force * Math.sin(angle);
                         b.vx += force * Math.cos(angle);
@@ -223,25 +232,15 @@ public class FluidSimulation {
                     }
                 }
             }
-        }
+        });
     }
 
-    private double calculateDensity(int x, int y) {
-        double density = 0;
-        for (Particle p : particles) {
-            double dx = x - p.x;
-            double dy = y - p.y;
-            double distanceSquared = dx * dx + dy * dy;
-            density += Particle.RADIUS * Particle.RADIUS / (distanceSquared + 1);
-        }
-        return density;
-    }
+    private List<Object> marchingSquares() {
+        List<Object> polygons = Collections.synchronizedList(new ArrayList<>());
+        int stepSize = 7; // Adjust for resolution vs performance
 
-    private ArrayList<Polygon> marchingSquares() {
-        ArrayList<Polygon> polygons = new ArrayList<>();
-        int stepSize = 5; // Adjust for resolution vs performance
-
-        for (int x = 0; x < BOUNDING_BOX.width; x += stepSize) {
+        IntStream.range(0, BOUNDING_BOX.width / stepSize).parallel().forEach(i -> {
+            int x = i * stepSize;
             for (int y = 0; y < BOUNDING_BOX.height; y += stepSize) {
                 // Calculate densities at the corners of the square
                 double[] densities = {
@@ -257,7 +256,7 @@ public class FluidSimulation {
                     polygons.add(contour);
                 }
             }
-        }
+        });
 
         return polygons;
     }
@@ -308,9 +307,9 @@ public class FluidSimulation {
         protected void paintComponent(Graphics g) {
             super.paintComponent(g);
 
-            ArrayList<Polygon> fluidContours = marchingSquares();
-            for (Polygon contour : fluidContours) {
-                g.fillPolygon(contour);
+            List<Object> fluidContours = marchingSquares();
+            for (Object contour : fluidContours) {
+                g.fillPolygon((Polygon) contour);
             }
 
             // Draw FPS and particle count
