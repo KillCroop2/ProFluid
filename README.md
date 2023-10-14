@@ -35,6 +35,13 @@ java -cp src FluidSimulation
 - [`FluidSimulation.java`](https://github.com/KillCroop2/ProFluid/blob/master/src/FluidSimulation.java): Contains the main fluid simulation logic.
 - [`Particle.java`](https://github.com/KillCroop2/ProFluid/blob/master/src/Particle.java): Defines the properties and behaviors of individual particles used in the simulation.
 
+## Usage
+
+### Controls
+
+- **Left Mouse Button**: Add fluid to the simulation.
+- **Right Mouse Button**: Drag fluid around the simulation.
+
 ## Contributing
 
 Feel free to fork the project, make changes, and submit a pull request. All contributions are welcome!
