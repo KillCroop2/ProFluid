@@ -11,9 +11,9 @@ public class FluidSimulation {
     private final int MAX_PARTICLES = 10000;
     private final double GRAVITY = 0.2;
     private final double DRAG = 0.98;
-    private final double BOUNCE = 0.7;
+    private final double BOUNCE = 0.2;
     private final double PRESSURE = 0.05;
-    private final double VISCOSITY = 0.02;
+    private final double VISCOSITY = 0.1;
     private final Rectangle BOUNDING_BOX = new Rectangle(5, 5, 700 - 2 * (int)Particle.RADIUS, 500 - 2 * (int)Particle.RADIUS);
     private final int CELL_SIZE = 20;
     private static final double DENSITY_THRESHOLD = 3;
@@ -50,11 +50,6 @@ public class FluidSimulation {
         drawingPanel = new DrawingPanel();
         setupMouseListeners();
         frame.add(drawingPanel, BorderLayout.CENTER);
-
-        String[] modes = {"Pressure", "Velocity", "Acceleration"};
-        visualizationMode = new JComboBox<>(modes);
-        visualizationMode.addActionListener(e -> drawingPanel.setMode(Objects.requireNonNull(visualizationMode.getSelectedItem()).toString()));
-        frame.add(visualizationMode, BorderLayout.NORTH);
 
         frame.setVisible(true);
     }
@@ -175,24 +170,30 @@ public class FluidSimulation {
     }
 
     private void handleUserInteraction() {
-        if (mousePoint == null || particles.size() >= MAX_PARTICLES) return; // Check for max particles
+        if (particles.size() >= MAX_PARTICLES) return; // Check for max particles
         if (isLeftClick) {
             for (int i = 0; i < 10; i++) {
                 particles.add(new Particle(mousePoint.x, mousePoint.y, (Math.random() - 0.5) * 5, (Math.random() - 0.5) * 5));
             }
         }
         if (isRightClick) {
+            double constantForce = 3.0; // Adjust this value for desired force strength
+            double forceRadius = 100.0;  // Adjust this value for the desired radius of effect
+
             for (Particle p : particles) {
                 double dx = mousePoint.x - p.x;
                 double dy = mousePoint.y - p.y;
+                double distance = Math.sqrt(dx * dx + dy * dy);
 
-                double force = 30 / (1 + Math.sqrt(dx * dx + dy * dy));
-                double angle = Math.atan2(dy, dx);
-                p.vx += force * Math.cos(angle);
-                p.vy += force * Math.sin(angle);
+                if (distance <= forceRadius) {
+                    double angle = Math.atan2(dy, dx);
+                    p.vx += constantForce * Math.cos(angle);
+                    p.vy += constantForce * Math.sin(angle);
+                }
             }
         }
     }
+
 
     private double calculateDensity(int x, int y) {
         double density = 0;
@@ -235,9 +236,9 @@ public class FluidSimulation {
         });
     }
 
-    private List<Object> marchingSquares() {
-        List<Object> polygons = Collections.synchronizedList(new ArrayList<>());
-        int stepSize = 7; // Adjust for resolution vs performance
+    private List<Polygon> marchingSquares() {
+        List<Polygon> polygons = Collections.synchronizedList(new ArrayList<>());
+        int stepSize = 5; // Adjust for resolution vs performance
 
         IntStream.range(0, BOUNDING_BOX.width / stepSize).parallel().forEach(i -> {
             int x = i * stepSize;
@@ -296,20 +297,42 @@ public class FluidSimulation {
         return new Polygon(xPoints, yPoints, xPoints.length);
     }
 
+    private double calculateAveragePressure(Particle p) {
+        LinkedList<Particle> neighbors = getNeighbors(p);
+        return neighbors.size();
+    }
+
+    private Color getPressureColor(double pressure) {
+        int maxPressure = 50; // Adjust based on expected max pressure
+        double normalizedPressure = Math.min(pressure / maxPressure, 1.0);
+        int red = (int) (255 * normalizedPressure);
+        int blue = (int) (255 * (1 - normalizedPressure));
+        return new Color(red, 0, blue);
+    }
+
+    private double calculateContourAveragePressure(Polygon contour) {
+        double totalPressure = 0;
+        int count = 0;
+        for (Particle p : particles) {
+            if (contour.contains(p.x, p.y)) {
+                totalPressure += calculateAveragePressure(p);
+                count++;
+            }
+        }
+        return count > 0 ? totalPressure / count : 0;
+    }
 
     class DrawingPanel extends JPanel {
-
-        public void setMode(String mode) {
-            repaint();
-        }
-
         @Override
         protected void paintComponent(Graphics g) {
             super.paintComponent(g);
 
-            List<Object> fluidContours = marchingSquares();
-            for (Object contour : fluidContours) {
-                g.fillPolygon((Polygon) contour);
+            List<Polygon> fluidContours = marchingSquares();
+            for (Polygon contour : fluidContours) {
+                double contourAveragePressure = calculateContourAveragePressure(contour);
+                Color contourColor = getPressureColor(contourAveragePressure);
+                g.setColor(contourColor);
+                g.fillPolygon(contour);
             }
 
             // Draw FPS and particle count
